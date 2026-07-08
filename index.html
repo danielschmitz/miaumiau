@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>MiauMiau</title>
+<style>
+body{font-family:Arial;background:#222;color:#eee;max-width:900px;margin:auto;padding:20px}
+button,input{padding:8px;margin:4px} table{width:100%;border-collapse:collapse}
+td,th{border:1px solid #555;padding:6px}
+#status{font-weight:bold;color:#7f7}
+</style>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/speech-commands"></script>
+</head>
+<body>
+<h1>🐱 MiauMiau</h1>
+<div>Status: <span id="status">Parado</span></div>
+<label>Confiança mínima <input id="thr" type="range" min="0.5" max="0.99" step="0.01" value="0.8"><span id="tv">0.80</span></label><br>
+<button id="start">Iniciar</button>
+<button id="clear">Limpar histórico</button>
+<button id="csv">Exportar CSV</button>
+<h2>Histórico</h2>
+<table><thead><tr><th>Data/Hora</th><th>Classe</th><th>Confiança</th></tr></thead><tbody id="tb"></tbody></table>
+<script>
+const DB="miaumiau",STORE="logs";let db,last=0,rec;
+const openDB=()=>new Promise((res,rej)=>{const r=indexedDB.open(DB,1);
+r.onupgradeneeded=e=>e.target.result.createObjectStore(STORE,{autoIncrement:true});
+r.onsuccess=e=>{db=e.target.result;res()};r.onerror=rej;});
+async function add(o){return new Promise(ok=>{const t=db.transaction(STORE,"readwrite");t.objectStore(STORE).add(o);t.oncomplete=ok;});}
+async function all(){return new Promise(ok=>{const t=db.transaction(STORE);const g=t.objectStore(STORE).getAll();g.onsuccess=()=>ok(g.result);});}
+async function render(){const a=await all();tb.innerHTML="";a.reverse().forEach(x=>tb.innerHTML+=`<tr><td>${x.time}</td><td>${x.label}</td><td>${(x.score*100).toFixed(1)}%</td></tr>`)}
+thr.oninput=()=>tv.textContent=Number(thr.value).toFixed(2);
+clear.onclick=()=>{const t=db.transaction(STORE,"readwrite");t.objectStore(STORE).clear();t.oncomplete=render;}
+csv.onclick=async()=>{const a=await all();let s="datahora,classe,confianca\n";a.forEach(x=>s+=`${x.time},${x.label},${x.score}\n`);const b=new Blob([s]);const u=URL.createObjectURL(b);const A=document.createElement("a");A.href=u;A.download="miaumiau.csv";A.click();}
+start.onclick=async()=>{
+status.textContent="Carregando modelo...";
+rec=await speechCommands.create("BROWSER_FFT");
+await rec.ensureModelLoaded();
+status.textContent="Escutando...";
+rec.listen(async res=>{
+ let scores=[...res.scores];
+ let labels=rec.wordLabels();
+ let max=Math.max(...scores),i=scores.indexOf(max),lab=labels[i];
+ // OBS: este modelo reconhece palavras, não miados.
+ // Para um detector real de gatos, substitua pelo YAMNet/AudioSet.
+ if(max>Number(thr.value) && /cat|meow/i.test(lab)){
+   if(Date.now()-last>10000){
+      last=Date.now();
+      await add({time:new Date().toLocaleString(),label:lab,score:max});
+      render();
+   }
+ }
+},{probabilityThreshold:0,includeSpectrogram:false,overlapFactor:0.5});
+start.disabled=true;
+};
+(async()=>{await openDB();await render();})();
+</script>
+<p><b>Importante:</b> este exemplo usa o modelo Speech Commands porque é simples de integrar. Ele <b>não detecta miados reais</b>. Para detectar gatos de forma confiável, o próximo passo é trocar esse modelo pelo <b>YAMNet (AudioSet)</b>, que classifica centenas de sons ambientais.</p>
+</body></html>
